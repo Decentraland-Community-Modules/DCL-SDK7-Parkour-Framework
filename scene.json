@@ -1,0 +1,37 @@
+{
+	"ecs7": true,
+	"runtimeVersion": "7",
+	"display": {
+		"title": "Maze Escape Game",
+		"description": "You awaken to discover you are now trapped in a maze! Find all the keys and unlock the portal to escape!",
+		"navmapThumbnail": "images/scene-thumbnail.png",
+		"favicon": "favicon_asset"
+	},
+	"owner": "",
+	"contact": {
+		"name": "SDK",
+		"email": ""
+	},
+	"main": "bin/index.js",
+	"tags": [],
+	"scene": {
+		"parcels": [
+			"0,0"
+		],
+		"base": "0,0"
+	},
+	"spawnPoints": [
+		{
+			"name": "spawn1",
+			"default": true,
+			"position": { "x":4, "y":1, "z":0 },
+			"cameraTarget": { "x": 0, "y": 1, "z": 8 }
+		}
+	],
+	"requiredPermissions": [
+		"ALLOW_TO_TRIGGER_AVATAR_EMOTE",
+		"ALLOW_TO_MOVE_PLAYER_INSIDE_SCENE"
+	],
+	"featureToggles": {},
+	"worldConfiguration": { "name":"SceneDebugging.dcl.eth" }
+}

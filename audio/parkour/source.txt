@@ -1,0 +1,3 @@
+all sounds used in this game are royalty-free and available for commercial use as components of a product, do not redistribute them as a sole/un-modified unit.
+music: uppbeat.io
+sfx: mixkit.co
