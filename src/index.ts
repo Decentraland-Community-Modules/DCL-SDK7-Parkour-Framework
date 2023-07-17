@@ -5,7 +5,9 @@ import { ParkourCollectible } from './parkour-core/parkour-collectible';
 import { ParkourScoring } from './parkour-core/parkour-scoring.ui';
 import { AudioManager } from './utilities/audio-manager';
 import { engine, Transform, MeshRenderer, MeshCollider, ColliderLayer, pointerEventsSystem, InputAction } from '@dcl/sdk/ecs';
-import { Vector3, Quaternion } from '@dcl/sdk/math';
+import { Vector3, Quaternion, Color4 } from '@dcl/sdk/math';
+import { ParkourCheckpoint } from './parkour-core/parkour-checkpoint';
+import ReactEcs, { ReactEcsRenderer, UiEntity } from '@dcl/sdk/react-ecs';
 
 /**
  * main function that initializes scene and prepares it for play
@@ -17,8 +19,8 @@ export function main()
   for (const collectible of CollectibleData) {
     AudioManager.Instance.AddSound(collectible.id, collectible.sound);
   }
-
-
+  //  new checkpoint set
+  AudioManager.Instance.AddSound("CheckpointSet", "audio/parkour/sfx_checkpoint.wav");
 
   //callback linking
   //  NOTE: this could be relegated to another file/hidden in an initializer function, but I up them here for
@@ -35,6 +37,13 @@ export function main()
   //scoring callbacks
   //  when the score manager reaches the required score, it will call 
   ParkourScoring.RegisterCallback(ParkourStageManager.CompleteStage);
+  //checkpoint callbacks (new respawn location sound)
+  //  NOTE: all checkpoint management is handled internally, so you only need to set up the respawn calls (no need to 
+  //  manage what the current checkpoint is). this means all we need to do here is register an audio sfx that procs 
+  //  whenever a new checkpoint is set.
+  ParkourCheckpoint.RegisterCallback(() => {AudioManager.Instance.PlaySound("CheckpointSet");} );
+  //trap callbacks (player death calls)
+  
 
   //define game stages
   //  NOTE: the game is set up to process all game stages that are pushed into this array, iterating through them
@@ -68,7 +77,7 @@ export function main()
     }
   );
 
-  //start ui draw
+  //begin drawing ui (this function comes packed with an 'about' for the parkour module)
   //  NOTE: the scoring draw comes bundled in a single entity container, just append and place as needed in your UI 
   ParkourScoring.StartRender();
 }

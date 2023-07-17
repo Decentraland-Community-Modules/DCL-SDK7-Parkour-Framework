@@ -1,9 +1,13 @@
 /**
-    this file contains all the defs regarding traps
+    this file contains all the defs regarding a trap
 
-    to add another trap:
-    1   add the 'tag' to the enum
-    2   define the data object in trap_data (with tag as key)
+    to add another checkpoint style:
+    0   create your model (check notes for anim specifics)
+    1   add the 'id' to the enum (this is the name you will use to access the type via code)
+    2   define the data object in the data segmentv (with the 'id' property set to the same value you put in the enum)
+
+    NOTE:
+        animations are a WIP, im spending some time on building out a good doctrine
 
     Author: TheCryptoTrader69 (Alex Pazder)
     Contact: thecryptotrader69@gmail.com
@@ -14,21 +18,29 @@ export enum TRAP_TYPES {
     SPIKE = "spike",
 }
 
-/** registry of all traps */
-export const trap_data = {
-    "spike": {
-        //how much damage this trap does
-        value: 0,
-        //death area transform details
-        area:{
-            position: { x:0, y:0, z:0 },
-            scale: { x:0, y:0, z:0 },
-            rotation: { x:0, y:0, z:0 },
-        },
-        //model location paths
-        path: "models/parkour/trap/spike",
-    },
+/** ensure standardization between all data objects 
+ * (you can ignore this unless you want to mod the object's data def) 
+ */
+export interface TrapDataObject {
+    id: string,
+    area: {
+        position: { x: number; y: number; z: number; };
+        scale: { x: number; y: number; z: number; };
+    };
+    path: string;
 }
+
+/** registry of all trap styles */ 
+export const TrapData:TrapDataObject[] = [
+    {
+        id: "spike",
+        area:{ //trigger box size
+            position: { x:0, y:0, z:0 },
+            scale: { x:1, y:1, z:1 }
+        },
+        path: "models/parkour/traps/trap-spike.glb" ,
+    },
+]
 /*
 //multi-piece traps
 export const trap_data_multi = 

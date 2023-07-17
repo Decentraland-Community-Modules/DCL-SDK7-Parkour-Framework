@@ -1,12 +1,13 @@
 /**
-    this file contains all the defs regarding a platform's style
+    this file contains all the defs regarding a checkpoint's style
 
-    to add another platform style:
-    1   add the tag name to the enum
-    2   define the data object in platform_style (with tag as key)
+    to add another checkpoint style:
+    0   create your model
+    1   add the 'id' to the enum (this is the name you will use to access the type via code)
+    2   define the data object in the data segmentv (with the 'id' property set to the same value you put in the enum)
 
-    IDEAS/TODO:
-        could add more mods in def like friction or material data (alternative to hard baked objects)
+    TODO:
+        add baked-in sounds for activation & respawn (idk, the current callback linkage seems to work fine atm)
 
     Author: TheCryptoTrader69 (Alex Pazder)
     Contact: thecryptotrader69@gmail.com
@@ -14,31 +15,29 @@
 
 /** defines all styles available */
 export enum CHECKPOINT_TYPES {
-    DEFAULT = "default",
-    WOOD = "wood",
-    STONE = "stone",
     METAL = "metal",
 }
 
-/** registry of all possible styles  */ 
-/*      CHECKPOINT DEFS
-    holds styling data links to all graphics for checkpoints. each checkpoint
-    contains their own collider-area which represents the region of the checkpoint
-    that will interact with the player.
-*/
-export const checkpoint_data = 
-[
-    //default
+/** ensure standardization between all data objects 
+ * (you can ignore this unless you want to mod the object's data def) 
+ */
+export interface CheckpointDataObject {
+    id: string,
+    area: {
+        position: { x: number; y: number; z: number; };
+        scale: { x: number; y: number; z: number; };
+    };
+    path: string;
+}
+
+/** registry of all checkpoint styles */ 
+export const CheckpointData:CheckpointDataObject[] = [
     {
-        //call-tag
-        type: "platform_metal",
-        //model location paths
-        path: "platformMetal",
-        //collision area transform details
-        position:   "0_0.5_0",
-        scale:      "1_1_1",
-        rotation:   "0_0_0",
-        //respawn offset
-        offset:     "0_1_0"
-    }
+        id: "metal",
+        area:{ //trigger box size
+            position: { x:0, y:0, z:0 },
+            scale: { x:1, y:1, z:1 }
+        },
+        path: "models/parkour/checkpoints/checkpoint-metal.glb" ,
+    },
 ]

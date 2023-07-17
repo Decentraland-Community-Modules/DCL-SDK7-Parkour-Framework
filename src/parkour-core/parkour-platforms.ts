@@ -228,7 +228,7 @@ engine.addSystem(platformProcessingMoving);
 export module ParkourPlatform
 {
     //when true debug logs are generated (toggle off when you deploy)
-    const isDebugging:boolean = true;
+    const isDebugging:boolean = false;
 
     /** pool of existing objects, access is per type (ex: we don't mix blinking and rotating platforms) */
     var platformObjects:Entity[][] = [[],[],[],[]];

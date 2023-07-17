@@ -30,7 +30,7 @@ export const ParkourCollectibleComponent = engine.defineComponent("ParkourCollec
 export module ParkourCollectible
 {
     //when true debug logs are generated (toggle off when you deploy)
-    const isDebugging:boolean = true;
+    const isDebugging:boolean = false;
 
     /** pool of existing objects */
     var collectibleObjects:Entity[] = [];

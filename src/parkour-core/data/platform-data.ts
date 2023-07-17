@@ -3,8 +3,8 @@
 
     to add another platform style:
     0   create your model
-    1   add the 'tag' to the enum
-    2   define the data object in platform_style (with tag as key)
+    1   add the 'id' to the enum (this is the name you will use to access the type via code)
+    2   define the data object in the data segmentv (with the 'id' property set to the same value you put in the enum)
 
     IDEAS/TODO:
         add dynamic matieral plugs, 1 base object can have many different mat/textures applied to it
@@ -49,5 +49,5 @@ export const PlatformStyleData:PlatformStyleDataObject[] = [
     {
         id: "metal",
         path: "models/parkour/platforms/platform-metal.glb" 
-},
-    ];
+    },
+];

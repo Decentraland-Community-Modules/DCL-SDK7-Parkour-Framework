@@ -3,8 +3,8 @@
 
     to add another collectible:
     0   create your model (bake in any animations, such as coin rotation & sway)
-    1   add the 'id' to the enum (this is the name you will access the type via code)
-    2   define the data object in the data segment
+    1   add the 'id' to the enum (this is the name you will use to access the type via code)
+    2   define the data object in the data segmentv (with the 'id' property set to the same value you put in the enum)
 
     IDEAS/TODO:
         add dynamic matieral plugs, 1 base object can have many different mat/textures applied to it

@@ -1,12 +1,14 @@
 import { Entity, Transform } from "@dcl/sdk/ecs";
 import { Dictionary, List } from "../utilities/collections";
-import { STAGE_TYPE, StageConfig, StageDataObject, StagePlatformBlinkingDataObject, StagePlatformMovingDataObject, StagePlatformRotatingDataObject, StagePlatformStaticDataObject } from "./config/stage-config";
+import { STAGE_TYPE, StageCheckpointDataObject, StageCollectibleDataObject, StageConfig, StageDataObject, StagePlatformBlinkingDataObject, StagePlatformMovingDataObject, StagePlatformRotatingDataObject, StagePlatformStaticDataObject } from "./config/stage-config";
 import { CollectibleData, CollectibleDataObject } from "./data/collectible-data";
 import { ParkourCollectible } from "./parkour-collectible";
 import { ParkourScoring } from "./parkour-scoring.ui";
 import { ParkourPlatform, ParkourPlatformBlinkingComponent, ParkourPlatformMovingComponent, ParkourPlatformMovingData, ParkourPlatformRotatingComponent } from "./parkour-platforms";
 import { PLATFORM_TYPE } from "./data/platform-data";
 import { Vector3 } from "@dcl/sdk/math";
+import { ParkourCheckpoint, ParkourCheckpointComponent, RespawnLocationData } from "./parkour-checkpoint";
+import { movePlayerTo } from "~system/RestrictedActions";
 
 /** defines callback blueprint for stage competion callbacks */
 type ParkourStageCompleteCallback = () => void;
@@ -21,6 +23,7 @@ type ParkourGameCompleteCallback = () => void;
 
     TODO:
         set up platform parenting, recurssion is nearly in place
+        add on-game-start calls (ex: push the player to the first checkpoint location of a map) 
 
     Author: TheCryptoTrader69 (Alex Pazder)
     Contact: thecryptotrader69@gmail.com
@@ -34,6 +37,11 @@ export module ParkourStageManager
     var curGameStage:number = 0;
     /** cur stage type currently being displayed */
     var curStage:STAGE_TYPE;
+
+    /** internal counter for total number of collectibles */
+    var collectibleCount:number = 0;
+    /** internal counter for max possible score obtainable by gathering collectibles */
+    var collectibleScoreMax:number = 0;
 
     /** chain of all stages that should be completed before the enitre game is finished */
     export var GameStages:STAGE_TYPE[] = [];
@@ -74,9 +82,9 @@ export module ParkourStageManager
             defStage = StageConfig[0];
         }
 
-        //begin tracking required score to complete stage
-        var collectiblesMax:number = 0;
-        var scoreMax:number = 0;
+        //reset scoring counters
+        collectibleCount = 0;
+        collectibleScoreMax = 0;
 
         //generate all platforms
         //  static
@@ -98,34 +106,18 @@ export module ParkourStageManager
         
         //generate all collectibles
         for (const collectible of defStage.collectibles) {
-            //attempt to get type def
-            var platformDef:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === collectible.type);
-            //ensure def was found
-            if(platformDef === undefined) {
-                console.error("Parkour Manager: set() failed, could not find given collectible type='"+collectible.type.toString()+"' in data, check you data IDs");
-                platformDef = CollectibleData[0];
-            }
-            //create new collectible object
-            const entityCollectible:Entity = ParkourCollectible.Create(collectible.type);
-            //position collectible
-            const entityTransform = Transform.getMutable(entityCollectible);
-            entityTransform.position = collectible.transform.position;
-            entityTransform.scale = collectible.transform.scale;
-            entityTransform.rotation = collectible.transform.rotation;
-            //add to required score
-            collectiblesMax++;
-            scoreMax += platformDef.value;
-            if(isDebugging) console.log("Parkour Manager: added new collectible to stage, \n\ttype="+collectible.type+
-                "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-                "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
-            );
+            PrepareCollectible(collectible);
         }
         
         //generate all traps
 
+        //generate all checkpoints
+        for (const checkpoint of defStage.checkpoints) {
+            PrepareCheckpoint(checkpoint);
+        }
 
         //reset scoring manager
-        ParkourScoring.ResetScore(collectiblesMax, scoreMax);
+        ParkourScoring.ResetScore(collectibleCount, collectibleScoreMax);
 
         //update current stage
         curStage = stage;
@@ -237,6 +229,51 @@ export module ParkourStageManager
         component.isProcessing = true;
     }
 
+    /** prepares a new collectible */
+    export function PrepareCollectible(collectible:StageCollectibleDataObject) {
+        //attempt to get type def
+        var collectibleDef:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === collectible.type);
+        //ensure def was found
+        if(collectibleDef === undefined) {
+            console.error("Parkour Manager: set() failed, could not find given collectible type='"+collectible.type.toString()+"' in data, check you data IDs");
+            collectibleDef = CollectibleData[0];
+        }
+        //create new collectible object
+        const entityCollectible:Entity = ParkourCollectible.Create(collectible.type);
+        //position collectible
+        const entityTransform = Transform.getMutable(entityCollectible);
+        entityTransform.position = collectible.transform.position;
+        entityTransform.scale = collectible.transform.scale;
+        entityTransform.rotation = collectible.transform.rotation;
+        if(isDebugging) console.log("Parkour Manager: added new collectible to stage, \n\ttype="+collectible.type+
+            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
+            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
+        );
+        //add to required score
+        collectibleCount++;
+        collectibleScoreMax += collectibleDef.value;
+    }
+
+    /** prepares a new checkpoint */
+    export function PrepareCheckpoint(checkpoint: StageCheckpointDataObject) {
+        if(isDebugging) console.log("Parkour Manager: adding new checkpoint to stage, \n\tstyle="+checkpoint.style+"...");
+        //create new checkpoint object
+        const entityCheckpoint:Entity = ParkourCheckpoint.Create(checkpoint.style);
+        //load in component settings
+        const component = ParkourCheckpointComponent.getMutable(entityCheckpoint);
+        component.respawnOffset = checkpoint.settings.respawnOffset;
+        component.respawnLook = checkpoint.settings.respawnOffset;
+        //position checkpoint
+        const entityTransform = Transform.getMutable(entityCheckpoint);
+        entityTransform.position = checkpoint.transform.position;
+        entityTransform.scale = checkpoint.transform.scale;
+        entityTransform.rotation = checkpoint.transform.rotation;
+        if(isDebugging) console.log("Parkour Manager: added new checkpoint to stage, \n\tstyle="+checkpoint.style+
+            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
+            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
+        );
+    }
+
     /** called when a stage is completed */
     export function CompleteStage() {
         if(isDebugging) console.log("Parkour Manager: current stage="+curStage+" completed!");
@@ -279,6 +316,8 @@ export module ParkourStageManager
         ParkourCollectible.RemoveAll();
         //hide all traps
 
+        //hide all checkpoints
+        ParkourCheckpoint.RemoveAll();
         //hide scoring system
         ParkourScoring.SetDisplayState(false);
     }
@@ -290,5 +329,17 @@ export module ParkourStageManager
         //destroy all collectibles
         ParkourCollectible.DestroyAll();
         //destroy all traps
+        
+        //destroy all checkpoints
+        ParkourCheckpoint.DestroyAll();
+    }
+
+    /** respawns the player at their last checkpoint */
+    export function PlayerRespawn(respawnData:RespawnLocationData) {
+        //place player based on respawn data
+        movePlayerTo({
+          newRelativePosition: Vector3.create(respawnData.respawnLocation.x,respawnData.respawnLocation.y,respawnData.respawnLocation.z),
+          cameraTarget: Vector3.create(respawnData.respawnLookDir.x,respawnData.respawnLookDir.y,respawnData.respawnLookDir.z),
+        })
     }
 }

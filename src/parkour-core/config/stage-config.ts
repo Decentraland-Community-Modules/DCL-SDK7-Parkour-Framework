@@ -1,5 +1,7 @@
+import { CHECKPOINT_TYPES } from "../data/checkpoint-data";
 import { COLLECTIBLE_TYPE } from "../data/collectible-data";
 import { PLATFORM_STYLE_TYPE, PLATFORM_TYPE } from "../data/platform-data";
+import { TRAP_TYPES } from "../data/trap-data";
 
 
 /** defines call-linkage for all available stages */
@@ -20,8 +22,10 @@ export interface StageDataObject {
     platformsMoving: StagePlatformMovingDataObject[],
     collectibles: StageCollectibleDataObject[],
     traps: StageTrapDataObject[],
+    checkpoints: StageCheckpointDataObject[],
 }
-//static platforms
+//### PLATFORMS
+//  static
 export interface StagePlatformStaticDataObject {
     style: PLATFORM_STYLE_TYPE,
     transform: {
@@ -30,7 +34,7 @@ export interface StagePlatformStaticDataObject {
         rotation: { x: number; y: number; z: number; w:number; };
     };
 }
-//blinking platforms
+//  blinking
 export interface StagePlatformBlinkingDataObject {
     style: PLATFORM_STYLE_TYPE,
     transform: {
@@ -40,7 +44,7 @@ export interface StagePlatformBlinkingDataObject {
     };
     settings: { timeStart: number; timeOn: number; timeOff: number; };
 }
-//rotating platforms
+//  rotating
 export interface StagePlatformRotatingDataObject {
     style: PLATFORM_STYLE_TYPE,
     transform: {
@@ -50,7 +54,7 @@ export interface StagePlatformRotatingDataObject {
     };
     settings: { speedX: number; speedY: number; speedZ: number; };
 }
-//moving platforms
+//  moving
 export interface StagePlatformWaypointDataObject { position: { x: number; y: number; z: number; }; }
 export interface StagePlatformMovingDataObject {
     style: PLATFORM_STYLE_TYPE,
@@ -61,7 +65,7 @@ export interface StagePlatformMovingDataObject {
     };
     settings: { speed: number; waypoints:StagePlatformWaypointDataObject[]; };
 }
-//collectibles
+//### COLLECTIBLES
 export interface StageCollectibleDataObject {
     type: COLLECTIBLE_TYPE,
     transform: {
@@ -70,14 +74,24 @@ export interface StageCollectibleDataObject {
         rotation: { x: number; y: number; z: number; w: number; };
     };
 }
-//traps
+//### TRAPS
 export interface StageTrapDataObject {
-    type: string,
+    type: TRAP_TYPES,
     transform: {
         position: { x: number; y: number; z: number; };
         scale: { x: number; y: number; z: number; };
         rotation: { x: number; y: number; z: number; w: number; };
     };
+}
+//### CHECKPOINTS
+export interface StageCheckpointDataObject {
+    style: CHECKPOINT_TYPES,
+    transform: {
+        position: { x: number; y: number; z: number; };
+        scale: { x: number; y: number; z: number; };
+        rotation: { x: number; y: number; z: number; w: number; };
+    };
+    settings: { respawnOffset: { x: number; y: number; z: number; }; respawnLookDir: { x: number; y: number; z: number; };  };
 }
 
 /*      STAGE CONFIG
@@ -114,12 +128,21 @@ export const StageConfig: StageDataObject[] = [
             ]} 
             },
         ],
-        //all collectibles in stage
+        //all collectibles
         collectibles: [
             { type:COLLECTIBLE_TYPE.COPPER, transform:{ position: { x:2, y:1.5, z:2 }, scale: { x:0.25, y:0.25, z:0.25 }, rotation: { x:0, y:0, z:0, w:0 } } },
         ],
-        //all traps in stage
-        traps: []
+        //all traps
+        traps: [
+
+        ],
+        //all checkpoints
+        checkpoints: [
+            { style:CHECKPOINT_TYPES.METAL, transform:{ position: { x:2, y:0, z:11 }, scale: { x:1, y:1, z:1 }, rotation: { x:0, y:0, z:0, w:0 } }, 
+                settings: { respawnOffset: { x:0, y:1.5, z:0 }, respawnLookDir: { x:0, y:0, z:0 } } },
+            { style:CHECKPOINT_TYPES.METAL, transform:{ position: { x:6, y:0, z:11 }, scale: { x:1, y:1, z:1 }, rotation: { x:0, y:0, z:0, w:0 } }, 
+                settings: { respawnOffset: { x:0, y:1.5, z:0 }, respawnLookDir: { x:0, y:0, z:0 } } },
+        ],
     },
     {
         id:"stage_1",
@@ -153,8 +176,17 @@ export const StageConfig: StageDataObject[] = [
             { type:COLLECTIBLE_TYPE.COPPER, transform:{ position: { x:2, y:1.5, z:4 }, scale: { x:0.25, y:0.25, z:0.25 }, rotation: { x:0, y:0, z:0, w:0 } } },
             { type:COLLECTIBLE_TYPE.SILVER, transform:{ position: { x:4, y:1.5, z:4 }, scale: { x:0.25, y:0.25, z:0.25 }, rotation: { x:0, y:0, z:0, w:0 } } },
         ],
-        //all traps in stage
-        traps: []
+        //all traps
+        traps: [
+
+        ],
+        //all checkpoints
+        checkpoints: [
+            { style:CHECKPOINT_TYPES.METAL, transform:{ position: { x:2, y:0, z:11 }, scale: { x:1, y:1, z:1 }, rotation: { x:0, y:0, z:0, w:0 } }, 
+                settings: { respawnOffset: { x:0, y:1.5, z:0 }, respawnLookDir: { x:0, y:0, z:0 } } },
+            { style:CHECKPOINT_TYPES.METAL, transform:{ position: { x:6, y:0, z:11 }, scale: { x:1, y:1, z:1 }, rotation: { x:0, y:0, z:0, w:0 } }, 
+                settings: { respawnOffset: { x:0, y:1.5, z:0 }, respawnLookDir: { x:0, y:0, z:0 } } },
+        ],
     },
     {
         id:"stage_2",
@@ -189,7 +221,16 @@ export const StageConfig: StageDataObject[] = [
             { type:COLLECTIBLE_TYPE.SILVER, transform:{ position: { x:4, y:1.5, z:6 }, scale: { x:0.25, y:0.25, z:0.25 }, rotation: { x:0, y:0, z:0, w:0 } } },
             { type:COLLECTIBLE_TYPE.GOLD, transform:{ position: { x:6, y:1.5, z:6 }, scale: { x:0.25, y:0.25, z:0.25 }, rotation: { x:0, y:0, z:0, w:0 } } },
         ],
-        //all traps in stage
-        traps: []
+        //all traps
+        traps: [
+
+        ],
+        //all checkpoints
+        checkpoints: [
+            { style:CHECKPOINT_TYPES.METAL, transform:{ position: { x:2, y:0, z:11 }, scale: { x:1, y:1, z:1 }, rotation: { x:0, y:0, z:0, w:0 } }, 
+                settings: { respawnOffset: { x:0, y:1.5, z:0 }, respawnLookDir: { x:0, y:0, z:0 } } },
+            { style:CHECKPOINT_TYPES.METAL, transform:{ position: { x:6, y:0, z:11 }, scale: { x:1, y:1, z:1 }, rotation: { x:0, y:0, z:0, w:0 } }, 
+                settings: { respawnOffset: { x:0, y:1.5, z:0 }, respawnLookDir: { x:0, y:0, z:0 } } },
+        ],
     },
 ]
