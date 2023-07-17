@@ -1,7 +1,7 @@
 {
-  "name": "dcl-project",
+  "name": "dcl-sdk7-framework-parkour",
   "version": "1.0.0",
-  "description": "SDK7 Template scene",
+  "description": "SDK7 parkour community framework",
   "scripts": {
     "start": "sdk-commands start",
     "deploy": "sdk-commands deploy",

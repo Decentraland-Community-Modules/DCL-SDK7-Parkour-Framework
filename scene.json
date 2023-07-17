@@ -2,8 +2,8 @@
 	"ecs7": true,
 	"runtimeVersion": "7",
 	"display": {
-		"title": "Maze Escape Game",
-		"description": "You awaken to discover you are now trapped in a maze! Find all the keys and unlock the portal to escape!",
+		"title": "SDK7 - Community Parkour Kit",
+		"description": "This is an open source kit built to provide creators with all the tools they need to build their own parkour maps!",
 		"navmapThumbnail": "images/scene-thumbnail.png",
 		"favicon": "favicon_asset"
 	},
