@@ -1,19 +1,14 @@
-import { Entity, Transform } from "@dcl/sdk/ecs";
-import { Dictionary, List } from "../utilities/collections";
-import { STAGE_TYPE, StageCheckpointDataObject, StageCollectibleDataObject, StageConfig, StageDataObject, StagePlatformBlinkingDataObject, StagePlatformMovingDataObject, StagePlatformRotatingDataObject, StagePlatformStaticDataObject } from "./config/stage-config";
-import { CollectibleData, CollectibleDataObject } from "./data/collectible-data";
-import { ParkourCollectible } from "./parkour-collectible";
-import { ParkourScoring } from "./parkour-scoring.ui";
-import { ParkourPlatform, ParkourPlatformBlinkingComponent, ParkourPlatformMovingComponent, ParkourPlatformMovingData, ParkourPlatformRotatingComponent } from "./parkour-platforms";
-import { PLATFORM_TYPE } from "./data/platform-data";
 import { Vector3 } from "@dcl/sdk/math";
-import { ParkourCheckpoint, ParkourCheckpointComponent, RespawnLocationData } from "./parkour-checkpoint";
 import { movePlayerTo } from "~system/RestrictedActions";
-
-/** defines callback blueprint for stage competion callbacks */
-type ParkourStageCompleteCallback = () => void;
-/** defines callback blueprint for game competion callbacks */
-type ParkourGameCompleteCallback = () => void;
+import { List } from "../utilities/collections";
+import { STAGE_NAME, StageDataObject, StageConfig, StagePlatformStaticDataObject, StagePlatformBlinkingDataObject, StagePlatformRotatingDataObject, StagePlatformMovingDataObject, StageCollectibleDataObject, StageCheckpointDataObject, StageTrapDataObject } from "./config/stage-config";
+import { CollectibleDataObject, CollectibleData } from "./data/collectible-data";
+import { PLATFORM_TYPE } from "./data/platform-data";
+import { ParkourCheckpoint } from "./parkour-checkpoint";
+import { ParkourCollectible } from "./parkour-collectible";
+import { ParkourPlatform } from "./parkour-platforms";
+import { ParkourScoring } from "./parkour-scoring.ui";
+import { ParkourTrap } from "./parkour-trap";
 /*     PARKOUR MANAGER
     this module handles the process of creating/resetting stages and directly interfaces
     with parkour scoring to update values/monitor stage progress. 
@@ -31,12 +26,17 @@ type ParkourGameCompleteCallback = () => void;
 export module ParkourStageManager 
 {
     //when true debug logs are generated (toggle off when you deploy)
-    const isDebugging:boolean = true;
+    const isDebugging:boolean = false;
+    /** hard-coded tag for module, helps log search functionality */
+    const debugTag:string = "Parkour Stage Manager: ";
+
+    /** when true will automatically spawn player at the first spawnpoint created in the game */
+    const forceRespawn:boolean = true;
 
     /** cur parkour stage being processed compared to game stage */
     var curGameStage:number = 0;
     /** cur stage type currently being displayed */
-    var curStage:STAGE_TYPE;
+    var curStage:STAGE_NAME;
 
     /** internal counter for total number of collectibles */
     var collectibleCount:number = 0;
@@ -44,8 +44,10 @@ export module ParkourStageManager
     var collectibleScoreMax:number = 0;
 
     /** chain of all stages that should be completed before the enitre game is finished */
-    export var GameStages:STAGE_TYPE[] = [];
+    export var GameStages:STAGE_NAME[] = [];
 
+    /** defines callback blueprint for stage competion callbacks */
+    type ParkourStageCompleteCallback = () => void;
     /** all callbacks here are called when the stage is completed */
     var stageCompletedCallbacks:List<ParkourStageCompleteCallback> = new List<ParkourStageCompleteCallback>();
     /** registration for new stage completion callback */
@@ -53,6 +55,8 @@ export module ParkourStageManager
         stageCompletedCallbacks.addItem(callback);
     }
 
+    /** defines callback blueprint for game competion callbacks */
+    type ParkourGameCompleteCallback = () => void;
     /** all callbacks here are called when the game is completed */
     var gameCompletedCallbacks:List<ParkourGameCompleteCallback> = new List<ParkourGameCompleteCallback>();
     /** registration for new game completion callback */
@@ -69,16 +73,16 @@ export module ParkourStageManager
     }
 
     /** sets the current parkour stage being displayed and resets parkour scoring */
-    export function SetStage(stage:STAGE_TYPE) {
-        if(isDebugging) console.log("Parkour Manager: attempting to set new stage="+stage+"...");
+    export function SetStage(stage:STAGE_NAME) {
+        if(isDebugging) console.log(debugTag+"attempting to set new stage="+stage+"...");
         //clear previous stage
-        ClearStage();
+        DisableStageObjects();
         
         //attempt to get stage def
-        var defStage:StageDataObject|undefined = StageConfig.find(item => item.id === stage);
+        var defStage:StageDataObject|undefined = StageConfig.find(item => item.ID === stage);
         //ensure def was found
         if(defStage === undefined) {
-            console.error("Parkour Manager: set() failed, could not find given type='"+stage.toString()+"' in data, check you data IDs");
+            console.error(debugTag+"set() failed, could not find given type='"+stage.toString()+"' in data, check you data IDs");
             defStage = StageConfig[0];
         }
 
@@ -110,7 +114,12 @@ export module ParkourStageManager
         }
         
         //generate all traps
+        for (const trap of defStage.traps) {
+            PrepareTrap(trap);
+        }
 
+        //clear current checkpoint
+        ParkourCheckpoint.CurrentCheckpoint = undefined;
         //generate all checkpoints
         for (const checkpoint of defStage.checkpoints) {
             PrepareCheckpoint(checkpoint);
@@ -119,171 +128,165 @@ export module ParkourStageManager
         //reset scoring manager
         ParkourScoring.ResetScore(collectibleCount, collectibleScoreMax);
 
+        //if enforcing spawn on game start, spawn player at current checkpoint
+        if(forceRespawn) PlayerRespawn(ParkourCheckpoint.GetCurrentRespawnLocation());
+
         //update current stage
         curStage = stage;
-        if(isDebugging) console.log("Parkour Manager: set new stage="+stage+"!");
+        if(isDebugging) console.log(debugTag+"set new stage="+stage+"!");
     }
 
     /** prepares a new static platform */
-    export function PreparePlatformStatic(platform: StagePlatformStaticDataObject, parent:undefined|Entity = undefined) {
+    export function PreparePlatformStatic(data: StagePlatformStaticDataObject) {
         //create new platfrom object
-        const entityPlatform:Entity = ParkourPlatform.Create(PLATFORM_TYPE.STATIC, platform.style);
-        //position platfrom
-        const entityTransform = Transform.getMutable(entityPlatform);
-        entityTransform.parent = parent;
-        entityTransform.position = platform.transform.position;
-        entityTransform.scale = platform.transform.scale;
-        entityTransform.rotation = platform.transform.rotation;
-        if(isDebugging) console.log("Parkour Manager: added new platform to stage, \n\ttype="+PLATFORM_TYPE.STATIC+
-            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
-        );
-        //process all children
+        ParkourPlatform.Create({
+            type: PLATFORM_TYPE.STATIC, 
+            style: data.style,
+            //position
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+        });
 
+        if(isDebugging) console.log(debugTag+"added new static platform to stage, style="+data.style+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
+        );
     }
     
     /** prepares a new blinking platform */
-    export function PreparePlatformBlinking(platform: StagePlatformBlinkingDataObject, parent:undefined|Entity = undefined) {
-        if(isDebugging) console.log("Parkour Manager: adding new platform to stage, \n\ttype="+PLATFORM_TYPE.BLINKING+"...");
+    export function PreparePlatformBlinking(data: StagePlatformBlinkingDataObject) {
         //create new platfrom object
-        const entityPlatform:Entity = ParkourPlatform.Create(PLATFORM_TYPE.BLINKING, platform.style);
-        //load in component settings
-        const component = ParkourPlatformBlinkingComponent.getMutable(entityPlatform);
-        component.isOn = false;
-        component.timeDelta = platform.settings.timeStart;
-        component.timeOn = platform.settings.timeOn;
-        component.timeOff = platform.settings.timeOff;
-        component.sizeScale = platform.transform.scale;
-        //position platfrom
-        const entityTransform = Transform.getMutable(entityPlatform);
-        entityTransform.parent = parent;
-        entityTransform.position = platform.transform.position;
-        entityTransform.scale = platform.transform.scale;
-        entityTransform.rotation = platform.transform.rotation;
-        if(isDebugging) console.log("Parkour Manager: added new platform to stage, \n\ttype="+PLATFORM_TYPE.BLINKING+
-            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
-        );
-        //process all children
+        ParkourPlatform.Create({
+            type: PLATFORM_TYPE.BLINKING, 
+            style: data.style,
+            //position
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+            //settings
+            timeStart: data.settings.timeOn,
+            timeOn: data.settings.timeOn,
+            timeOff: data.settings.timeOn,
+        });
 
-        //activate component
-        component.isProcessing = true;
+        if(isDebugging) console.log(debugTag+"added new blinking platform to stage, style="+data.style+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
+        );
     }
     
     /** prepares a new rotating platform */
-    export function PreparePlatformRotating(platform: StagePlatformRotatingDataObject, parent:undefined|Entity = undefined) {
-        if(isDebugging) console.log("Parkour Manager: adding new platform to stage, \n\ttype="+PLATFORM_TYPE.ROTATING+"...");
+    export function PreparePlatformRotating(data: StagePlatformRotatingDataObject) {
         //create new platfrom object
-        const entityPlatform:Entity = ParkourPlatform.Create(PLATFORM_TYPE.ROTATING, platform.style);
-        //load in component settings
-        const component = ParkourPlatformRotatingComponent.getMutable(entityPlatform);
-        component.speedX = platform.settings.speedX;
-        component.speedY = platform.settings.speedY;
-        component.speedZ = platform.settings.speedZ;
-        //position platfrom
-        const entityTransform = Transform.getMutable(entityPlatform);
-        entityTransform.parent = parent;
-        entityTransform.position = platform.transform.position;
-        entityTransform.scale = platform.transform.scale;
-        entityTransform.rotation = platform.transform.rotation;
-        if(isDebugging) console.log("Parkour Manager: added new platform to stage, \n\ttype="+PLATFORM_TYPE.ROTATING+
-            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
-        );
-        //process all children
+        ParkourPlatform.Create({
+            type: PLATFORM_TYPE.ROTATING, 
+            style: data.style,
+            //position
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+            //settings
+            speedX: data.settings.speedX,
+            speedY: data.settings.speedY,
+            speedZ: data.settings.speedZ,
+        });
 
-        //activate component
-        component.isProcessing = true;
+        if(isDebugging) console.log(debugTag+"added new rotating platform to stage, style="+data.style+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
+        );
     }
     
     /** prepares a new moving platform */
-    export function PreparePlatformMoving(platform: StagePlatformMovingDataObject, parent:undefined|Entity = undefined) {
-        if(isDebugging) console.log("Parkour Manager: adding new platform to stage, \n\ttype="+PLATFORM_TYPE.MOVING+"...");
+    export function PreparePlatformMoving(data: StagePlatformMovingDataObject) {
         //create new platfrom object
-        const entityPlatform:Entity = ParkourPlatform.Create(PLATFORM_TYPE.MOVING, platform.style);
-        //load in component settings
-        const component = ParkourPlatformMovingComponent.getMutable(entityPlatform);
-        component.indexCur = 0;
-        component.speed = platform.settings.speed;
-        component.waypoints = [];
-        for (let i = 0; i < platform.settings.waypoints.length; i++) {
-            component.waypoints.push(Vector3.create(
-                platform.settings.waypoints[i].position.x,
-                platform.settings.waypoints[i].position.y,
-                platform.settings.waypoints[i].position.z
-            ));
-        }
-        //position platfrom
-        const entityTransform = Transform.getMutable(entityPlatform);
-        entityTransform.parent = parent;
-        entityTransform.position = platform.transform.position;
-        entityTransform.scale = platform.transform.scale;
-        entityTransform.rotation = platform.transform.rotation;
-        if(isDebugging) console.log("Parkour Manager: added new platform to stage, \n\ttype="+PLATFORM_TYPE.MOVING+
-            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
-        );
-        //process all children
+        ParkourPlatform.Create({
+            type: PLATFORM_TYPE.MOVING, 
+            style: data.style,
+            //position
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+            //settings
+            speed: data.settings.speed,
+            waypoints: data.settings.waypoints,
+        });
 
-        //activate component
-        component.isProcessing = true;
+        if(isDebugging) console.log(debugTag+"added new moving platform to stage, style="+data.style+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
+        );
     }
 
     /** prepares a new collectible */
-    export function PrepareCollectible(collectible:StageCollectibleDataObject) {
+    export function PrepareCollectible(data:StageCollectibleDataObject) {
+        //create new collectible object
+        ParkourCollectible.Create({
+            type: data.type,
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+        });
         //attempt to get type def
-        var collectibleDef:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === collectible.type);
+        var collectibleDef:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === data.type);
         //ensure def was found
         if(collectibleDef === undefined) {
-            console.error("Parkour Manager: set() failed, could not find given collectible type='"+collectible.type.toString()+"' in data, check you data IDs");
+            console.error(debugTag+"set() failed, could not find given collectible type='"+data.type.toString()+"' in data, check you data IDs");
             collectibleDef = CollectibleData[0];
         }
-        //create new collectible object
-        const entityCollectible:Entity = ParkourCollectible.Create(collectible.type);
-        //position collectible
-        const entityTransform = Transform.getMutable(entityCollectible);
-        entityTransform.position = collectible.transform.position;
-        entityTransform.scale = collectible.transform.scale;
-        entityTransform.rotation = collectible.transform.rotation;
-        if(isDebugging) console.log("Parkour Manager: added new collectible to stage, \n\ttype="+collectible.type+
-            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
-        );
         //add to required score
         collectibleCount++;
         collectibleScoreMax += collectibleDef.value;
+
+        if(isDebugging) console.log(debugTag+"added new collectible to stage, type="+data.type+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
+        );
+    }
+
+    /** prepares a new trap */
+    export function PrepareTrap(data:StageTrapDataObject) {
+        //create new collectible object
+        ParkourTrap.Create({
+            type: data.type,
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+        });
+
+        if(isDebugging) console.log(debugTag+"added new trap to stage, type="+data.type+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
+        );
     }
 
     /** prepares a new checkpoint */
-    export function PrepareCheckpoint(checkpoint: StageCheckpointDataObject) {
-        if(isDebugging) console.log("Parkour Manager: adding new checkpoint to stage, \n\tstyle="+checkpoint.style+"...");
+    export function PrepareCheckpoint(data: StageCheckpointDataObject) {
         //create new checkpoint object
-        const entityCheckpoint:Entity = ParkourCheckpoint.Create(checkpoint.style);
-        //load in component settings
-        const component = ParkourCheckpointComponent.getMutable(entityCheckpoint);
-        component.respawnOffset = checkpoint.settings.respawnOffset;
-        component.respawnLook = checkpoint.settings.respawnOffset;
-        //position checkpoint
-        const entityTransform = Transform.getMutable(entityCheckpoint);
-        entityTransform.position = checkpoint.transform.position;
-        entityTransform.scale = checkpoint.transform.scale;
-        entityTransform.rotation = checkpoint.transform.rotation;
-        if(isDebugging) console.log("Parkour Manager: added new checkpoint to stage, \n\tstyle="+checkpoint.style+
-            "\n\tpos(x="+entityTransform.position.x+", y="+entityTransform.position.y+", z="+entityTransform.position.z+"), "+
-            "\n\tscale(x="+entityTransform.scale.x+", y="+entityTransform.scale.y+", z="+entityTransform.scale.z+")"
+        const checkpoint = ParkourCheckpoint.Create({
+            type: data.style,
+            //position
+            position: data.transform.position,
+            scale: data.transform.scale,
+            rotation: data.transform.rotation,
+            //respawn
+            respawnPos: data.settings.respawnOffset,
+            respawnRot: data.settings.respawnDirection
+        });
+
+        //ensure checkpoint is set to the first checkpoint created for the stage
+        if(ParkourCheckpoint.CurrentCheckpoint == undefined) ParkourCheckpoint.CurrentCheckpoint = checkpoint;
+
+        if(isDebugging) console.log(debugTag+"added new checkpoint to stage, style="+data.style+
+            "\n\tpos(x="+data.transform.position.x+", y="+data.transform.position.y+", z="+data.transform.position.z+")"
         );
     }
 
     /** called when a stage is completed */
     export function CompleteStage() {
-        if(isDebugging) console.log("Parkour Manager: current stage="+curStage+" completed!");
+        if(isDebugging) console.log(debugTag+"current stage="+curStage+" completed!");
 
         //push to next game stage
         curGameStage++;
 
         //next game stage exists
         if(curGameStage < GameStages.length) {
-            if(isDebugging) console.log("Parkour Manager: starting next stage...");
+            if(isDebugging) console.log(debugTag+"starting next stage...");
             //call all stage completion callbacks
             for (var i: number = 0; i < stageCompletedCallbacks.size(); i++) {
                 stageCompletedCallbacks.getItem(i)();
@@ -293,13 +296,13 @@ export module ParkourStageManager
         }
         //game is completed
         else {
-            if(isDebugging) console.log("Parkour Manager: game has been completed!");
+            if(isDebugging) console.log(debugTag+"game has been completed!");
             //call all game completion callbacks
             for (var i: number = 0; i < gameCompletedCallbacks.size(); i++) {
                 gameCompletedCallbacks.getItem(i)();
             }
             //clear stage
-            ClearStage();
+            DisableStageObjects();
         }
     }
 
@@ -308,38 +311,42 @@ export module ParkourStageManager
         SetStage(GameStages[curGameStage]);
     }
 
-    /** clears all parkour objects from the field (objs still exist in-scene) and hides parkour scoring */
-    export function ClearStage() {
+    /** disables all parkour objects from the field (objs still exist in-scene) and hides parkour scoring */
+    export function DisableStageObjects() {
+        if(isDebugging) console.log(debugTag+"disabling all stage objects...");
         //hide all platforms
-        ParkourPlatform.RemoveAll();
+        ParkourPlatform.DisableAll();
         //hide all collectibles
-        ParkourCollectible.RemoveAll();
+        ParkourCollectible.DisableAll();
         //hide all traps
-
+        ParkourTrap.DisableAll();
         //hide all checkpoints
-        ParkourCheckpoint.RemoveAll();
+        ParkourCheckpoint.DisableAll();
         //hide scoring system
         ParkourScoring.SetDisplayState(false);
+        if(isDebugging) console.log(debugTag+"disabled all stage objects!");
     }
 
-    /** clears all parkour objects from the field (objs are removed from scene) and hides parkour scoring */
-    export function CleanStage() {
+    /** destroys all parkour objects from the field (objs are removed from scene) and hides parkour scoring */
+    export function DestroyStageObjects() {
+        if(isDebugging) console.log(debugTag+"destroying all stage objects...");
         //destroy all platforms
         ParkourPlatform.DestroyAll();
         //destroy all collectibles
         ParkourCollectible.DestroyAll();
         //destroy all traps
-        
+        ParkourTrap.DestroyAll();
         //destroy all checkpoints
         ParkourCheckpoint.DestroyAll();
+        if(isDebugging) console.log(debugTag+"destroyed all stage objects!");
     }
 
     /** respawns the player at their last checkpoint */
-    export function PlayerRespawn(respawnData:RespawnLocationData) {
+    export function PlayerRespawn(respawnData:ParkourCheckpoint.RespawnLocationData) {
         //place player based on respawn data
         movePlayerTo({
-          newRelativePosition: Vector3.create(respawnData.respawnLocation.x,respawnData.respawnLocation.y,respawnData.respawnLocation.z),
-          cameraTarget: Vector3.create(respawnData.respawnLookDir.x,respawnData.respawnLookDir.y,respawnData.respawnLookDir.z),
+            newRelativePosition: Vector3.create(respawnData.respawnLocation.x,respawnData.respawnLocation.y,respawnData.respawnLocation.z),
+            cameraTarget: Vector3.create(respawnData.respawnLookDir.x,respawnData.respawnLookDir.y,respawnData.respawnLookDir.z),
         })
     }
 }

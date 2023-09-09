@@ -1,6 +1,46 @@
 import { AudioSource, AvatarAnchorPointType, AvatarAttach, Entity, Transform, engine } from "@dcl/sdk/ecs";
 import { Quaternion, Vector3 } from "@dcl/sdk/math";
 import Dictionary from "./collections";
+
+const AUDIO_ENTITY_POOL_SIZE:number = 3;
+
+/** represents a single audio listing, managing a set of audio sounds  */
+class AudioManagerPiece {
+    private index:number = 0;
+    private audioEntities:Entity[] = [];
+
+    constructor(par:Entity, soundSrc:string) {
+        //create required sound objects
+        for(let i=0; i<AUDIO_ENTITY_POOL_SIZE; i++) {
+            //  entity
+            const entity = engine.addEntity();
+            Transform.create(entity,
+            ({
+                parent: par,
+                position: Vector3.create(0,0,0),
+                scale: Vector3.create(1,1,1),
+                rotation: Quaternion.fromEulerDegrees(0, 0, 0)
+            }));
+            //  audio source
+            AudioSource.create(entity, {
+                audioClipUrl: soundSrc,
+                loop: false,
+                playing: false,
+                volume: 5
+            });
+            //  add to pooling
+            this.audioEntities.push(entity);
+        }
+    }
+
+    public PlaySound() {
+        //get next audio source
+        this.index++;
+        if(this.index >= this.audioEntities.length) this.index = 0;
+        //play sound
+        AudioSource.getMutable(this.audioEntities[this.index]).playing = true;
+    }
+}
 /*      AUDIO MANAGER
     controls audio components in-scene
 
@@ -26,7 +66,7 @@ export class AudioManager
     parentEntity:Entity;
 
     /** registry of all audio that can be played */    
-    audioDict:Dictionary<Entity>;
+    audioDict:Dictionary<AudioManagerPiece>;
     
     //constructor
     constructor()
@@ -46,39 +86,22 @@ export class AudioManager
         });
 
         //initialize collection
-        this.audioDict = new Dictionary<Entity>();
+        this.audioDict = new Dictionary<AudioManagerPiece>();
     }
 
     AddSound(key:string, location:string) {
         //ensure key is not empty
         if(key === '') return;
-        //entity
-        const soundEntity = engine.addEntity();
-        Transform.create(soundEntity,
-        ({
-            parent: this.parentEntity,
-            position: Vector3.create(0,0,0),
-            scale: Vector3.create(1,1,1),
-            rotation: Quaternion.fromEulerDegrees(0, 0, 0)
-        }));
-        //audio source
-        AudioSource.create(soundEntity, {
-            audioClipUrl: location,
-            loop: false,
-            playing: false,
-            volume: 5
-        });
+        //create audio piece
+        const piece =  new AudioManagerPiece(this.parentEntity, location);
         //add to collection
-        this.audioDict.addItem(key, soundEntity);
+        this.audioDict.addItem(  key, piece);
     }
 
     PlaySound(key:string) {
         //ensure key exists in dict
         if(!this.audioDict.containsKey(key)) return;
-        //get entity
-        const entity:Entity = this.audioDict.getItem(key);
-        //reset the place state to play from start
-        AudioSource.getMutable(entity).playing = false;
-        AudioSource.getMutable(entity).playing = true;
+        //send sound request
+        this.audioDict.getItem(key).PlaySound();
     }
 }

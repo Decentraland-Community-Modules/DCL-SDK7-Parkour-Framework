@@ -14,15 +14,15 @@
 */
 
 /** defines all available collectables */
-export enum TRAP_TYPES {
-    SPIKE = "spike",
+export enum TRAP_TYPE {
+    SPIKE,
 }
 
 /** ensure standardization between all data objects 
  * (you can ignore this unless you want to mod the object's data def) 
  */
 export interface TrapDataObject {
-    id: string,
+    id: TRAP_TYPE,
     area: {
         position: { x: number; y: number; z: number; };
         scale: { x: number; y: number; z: number; };
@@ -33,12 +33,12 @@ export interface TrapDataObject {
 /** registry of all trap styles */ 
 export const TrapData:TrapDataObject[] = [
     {
-        id: "spike",
+        id: TRAP_TYPE.SPIKE,
         area:{ //trigger box size
             position: { x:0, y:0, z:0 },
             scale: { x:1, y:1, z:1 }
         },
-        path: "models/parkour/traps/trap-spike.glb" ,
+        path: "models/parkour/traps/trap-spike-static.glb" ,
     },
 ]
 /*

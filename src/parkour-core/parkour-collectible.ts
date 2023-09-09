@@ -1,25 +1,17 @@
-import { ColliderLayer, Entity, GltfContainer, MeshCollider, MeshRenderer, Schemas, Transform, engine, removeEntityWithChildren } from "@dcl/sdk/ecs";
-import { Vector3 } from "@dcl/sdk/math";
-import { COLLECTIBLE_TYPE, CollectibleData, CollectibleDataObject } from "./data/collectible-data";
-import Dictionary, { List } from "../utilities/collections";
 import * as utils from '@dcl-sdk/utils'
-/** defines callback blueprint that will be called upon collectible gather */
-type ParkourCollectibleCallback = () => void;
-/** component data def, this will exist attached on the object's entity as a component */
-export const ParkourCollectibleData = { 
-    /** true when this object is rendered in the scene */
-    isActive:Schemas.Boolean, 
-    /** true when this object has been collected by the local player */
-    isCollected:Schemas.Boolean, 
-    /** defines the type of collectible */
-    type:Schemas.String,
-}
-/** define component, adding it to the engine as a managed behaviour */
-export const ParkourCollectibleComponent = engine.defineComponent("ParkourCollectibleData", ParkourCollectibleData);
+import { Dictionary, List } from "../utilities/collections";
+import { COLLECTIBLE_TYPE, CollectibleData, CollectibleDataObject } from "./data/collectible-data";
+import { ColliderLayer, Entity, GltfContainer, Schemas, Transform, engine } from "@dcl/sdk/ecs";
+import { Quaternion } from '@dcl/sdk/math';
 /*      PARKOUR COLLECTIBLE
     collictables are objects that can be placed around your map, they use the same
     set logic as platforms: only shown when their linked set is active. sets can be
     defined either in their repsective config file or during runtime.
+
+    NOTE: there 2 major pieces that are managed here that make up an object
+        1 - display entity, in-game object that the player sees/interacts with
+        2 - component data, this is attatched to the display entity (provides access to object's id/type)
+        3 - processing function, responsible for time-base mechanics, like moving/rotating objects, and are always active
 
     NOTE: audio is not handled here (we dont want EVERY collectible to have an audio
         source), instead audio is handled by the parkour stage manager.
@@ -31,155 +23,177 @@ export module ParkourCollectible
 {
     //when true debug logs are generated (toggle off when you deploy)
     const isDebugging:boolean = false;
+    /** hard-coded tag for module, helps log search functionality */
+    const debugTag:string = "Parkour Collectible: ";
 
-    /** pool of existing objects */
-    var collectibleObjects:Entity[] = [];
+    /** pool of all existing objects */
+    var pooledObjects:Entity[] = [];
 
+    /** defines callback blueprint that will be called upon collectible gather */
+    type ParkourCollectibleCallback = () => void;
     /** dictionary of all callbacks to be called when a collectible is picked up, key'd by collectible id */
     var collectibleObjectCallbacks:Dictionary<List<ParkourCollectibleCallback>> = new Dictionary<List<ParkourCollectibleCallback>>();
-    /** registration for new callback */
-    export function RegisterCallback(type:string, callback:ParkourCollectibleCallback) {
+    /** registers a new callback under the given name */
+    export function RegisterCallback(name:string, callback:ParkourCollectibleCallback) {
         //ensure target list exists
-        if(!collectibleObjectCallbacks.containsKey(type)) 
-            collectibleObjectCallbacks.addItem(type, new List<ParkourCollectibleCallback>());
+        if(!collectibleObjectCallbacks.containsKey(name)) 
+            collectibleObjectCallbacks.addItem(name, new List<ParkourCollectibleCallback>());
         //add callback to listing
-        collectibleObjectCallbacks.getItem(type).addItem(callback);
+        collectibleObjectCallbacks.getItem(name).addItem(callback);
     }
 
-    /** creates a new collectible object, returning reference to its entity (this handles the creation of the entity as well so ns can handle pooling) */
-    export function Create(type:COLLECTIBLE_TYPE):Entity {
-        //attempt to get type def
-        var def:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === type);
-        //ensure def was found
-        if(def === undefined) {
-            console.error("Parkour Collectible: create() failed, could not find given type='"+type.toString()+"' in data, check you data IDs");
-            def = CollectibleData[0];
-        }
-
-        //attempt to find an existing unused object
-        for (let i = 0; i < collectibleObjects.length; i++) {
-            if(!ParkourCollectibleComponent.get(collectibleObjects[i]).isActive) {   
-                if(isDebugging) console.log("Parkour Collectible: recycled unused collectible object, type="+type);
-                //re-enable and re-type unused object from pooling
-                return SetType(collectibleObjects[i], type);
-            }
-        }
-
-        //create object
-        //  create entity
-        const entity = engine.addEntity();
-        Transform.create(entity);
-        //  add custom model
-        GltfContainer.create(entity, {
-            src: def.path,
-            visibleMeshesCollisionMask: ColliderLayer.CL_POINTER,
-            invisibleMeshesCollisionMask: undefined
-        });
-        //MeshRenderer.setBox(entity);
-        //  add component, initialized by type
-        ParkourCollectibleComponent.create(entity,{
-            isActive: true,
-            isCollected: false,
-            type: type
-        });
-        //  add trigger area
-        utils.triggers.addTrigger(entity, 
-            utils.NO_LAYERS, //object's own layer
-            utils.LAYER_1, //layer that triggers object
-            //placement details 
-            [{
-                type: 'box',
-                position: Vector3.create(def.area.position.x,def.area.position.y,def.area.position.z),
-                scale: Vector3.create(def.area.scale.x,def.area.scale.y,def.area.scale.z)
-            }], 
-            function(e) { CollectibleGathered(entity); }
-        );
-        
-        //add entity to pooling
-        collectibleObjects.push(entity);
-        if(isDebugging) console.log("Parkour Collectible: created new collectible object, type="+type);
-        //provide entity reference
-        return entity;
+    /** object interface used to define all data required to create a new object */
+    export interface ParkourCollectibleCreationData {
+        //type
+        type: COLLECTIBLE_TYPE;
+        //position
+        position: { x:number; y:number; z:number; }; 
+        scale: { x:number; y:number; z:number; };
+        rotation: { x:number; y:number; z:number; };
     }
+
+    /** component data def, this will exist attached on the object's entity as a component */
+    export const ParkourCollectibleComponentData = { 
+        /** true when this object is rendered in the scene, allows pooling/re-use */
+        isActive:Schemas.Boolean, 
+        /** true when this object has been collected by the local player, halts ghost collections */
+        isCollected:Schemas.Boolean, 
+        /** defines the type of collectible */
+        type:Schemas.String,
+    }
+    /** define component, adding it to the engine as a managed behaviour */
+    export const ParkourCollectibleComponent = engine.defineComponent("ParkourCollectibleComponentData", ParkourCollectibleComponentData);
 
     /** called a collectible's trigger box is entered/collection attempt is made */
     function CollectibleGathered(entity:Entity) {
         //get component
         const component = ParkourCollectibleComponent.getMutable(entity);
-        if(isDebugging) console.log("Parkour Collectible: attempting to gather collectible type="+component.type);
+        if(isDebugging) console.log(debugTag+"attempting to gather collectible type="+component.type+"...");
 
         //ensure collectible is active (included in game)
         if(!component.isActive) return;
         //ensure collectible is not already gathered
         if(component.isCollected) return;
 
-        //gather collectible
-        component.isCollected = true;
-        //hide object (soft remove work-around)
-        Transform.getMutable(entity).scale = { x:0, y:0, z:0 }; 
+        //hide object
+        Disable(entity);
 
         //process all callbacks
         for (var i: number = 0; i < collectibleObjectCallbacks.getItem(component.type).size(); i++) {
             collectibleObjectCallbacks.getItem(component.type).getItem(i)();
         }
+        if(isDebugging) console.log(debugTag+"gathered collectible type="+component.type+"!");
     }
 
-    /** redefines the type of the given collectible object */
-    function SetType(entity:Entity, type:COLLECTIBLE_TYPE):Entity {
+    /** creates a new object based on provided type, returning reference to its entity 
+     *  this handles the creation of the entity as well so ns can handle pooling
+     */
+    export function Create(data:ParkourCollectibleCreationData):undefined|Entity {
+        if(isDebugging) console.log(debugTag+"creating new collectible object, type="+data.type+"...");
         //attempt to get type def
-        var def:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === type);
+        var def:CollectibleDataObject|undefined = CollectibleData.find(item => item.id === data.type);
         //ensure def was found
         if(def === undefined) {
-            console.error("Parkour Collectible: set() failed, could not find given type='"+type.toString()+"' in data, check you data IDs");
+            console.error(debugTag+"create() failed to find given type="+data.type.toString()+" in data, check you data IDs");
             def = CollectibleData[0];
         }
-        //  replace custom model
+    
+        //attempt to find an existing unused object
+		var entity:undefined|Entity = undefined; 
+        for (let i = 0; i < pooledObjects.length; i++) {
+            //if object is unused, pull object from pool
+            if(!ParkourCollectibleComponent.get(pooledObjects[i]).isActive) { 
+                if(isDebugging) console.log(debugTag+"recycled unused object");  
+                //set object
+                entity = pooledObjects[i];        
+                //resize trigger area
+                utils.triggers.setAreas(entity,
+                    [{
+                        type: 'box',
+                        position: def.area.position,
+                        scale: def.area.scale
+                    }]
+                );
+                break;
+            }
+        }
+        //if no entity 
+		if(entity == undefined) {
+			if(isDebugging) console.log(debugTag+"created new object");
+			//create object entity
+			entity = engine.addEntity();
+            //  add trigger area
+            const entityRef:Entity = entity;    //must assert entity ref for trigger function
+            utils.triggers.addTrigger(entity, 
+                utils.NO_LAYERS, //object's own layer
+                utils.LAYER_1, //layer that triggers object
+                //placement details 
+                [{
+                    type: 'box',
+                    position: def.area.position,
+                    scale: def.area.scale
+                }], 
+                function(e) { CollectibleGathered(entityRef); }
+            );
+            //  add entity to pooling
+            pooledObjects.push(entity);
+		}
+        
+        //prepare object pieces
+        //  transform
+        const transform = Transform.getOrCreateMutable(entity);
+        transform.position = data.position;
+        transform.scale = data.scale;
+        transform.rotation = Quaternion.fromEulerDegrees(data.rotation.x,data.rotation.y,data.rotation.z);
+        //  custom model
         GltfContainer.createOrReplace(entity, {
             src: def.path,
             visibleMeshesCollisionMask: ColliderLayer.CL_POINTER,
             invisibleMeshesCollisionMask: undefined
         });
-        //resize trigger area
-        utils.triggers.setAreas(entity,
-            [{
-                type: 'box',
-                position: Vector3.create(def.area.position.x,def.area.position.y,def.area.position.z),
-                scale: Vector3.create(def.area.scale.x,def.area.scale.y,def.area.scale.z)
-            }]
-        );
-        //get component from object
-        const component = ParkourCollectibleComponent.getMutable(entity);
-        //prepare component
+        //  component
+        const component = ParkourCollectibleComponent.getOrCreateMutable(entity);
         component.isActive = true;
         component.isCollected = false;
-        component.type = type;
+        component.type = data.type;
+
+        //provide entity reference
+        if(isDebugging) console.log(debugTag+"created new collectible object, type="+data+"!");
         return entity;
     }
 
-    /** removes all objects from the game */
-    export function RemoveAll() {
-        for (let i = 0; i < collectibleObjects.length; i++) {
-            Remove(collectibleObjects[i]);
+    /** disables all pooled objects */
+    export function DisableAll() {
+        if(isDebugging) console.log(debugTag+"disabling all objects...");
+        for (let i = 0; i < pooledObjects.length; i++) {
+            Disable(pooledObjects[i]);
         }
+        if(isDebugging) console.log(debugTag+"disabled all objects!");
     }
-    /** removes given object from game, but does not get removed from engine (remaining in pool ) */
-    export function Remove(entity:Entity) {
+    
+    /** disables given object, remains in pooling but hidden in the game scene */
+    export function Disable(entity:Entity) {
         const component = ParkourCollectibleComponent.getMutable(entity);
         //disable via component
         component.isActive = false;
         component.isCollected = true;
         //hide object (soft remove work-around)
+        Transform.getMutable(entity).position = { x:8, y:-1, z:8 }; 
         Transform.getMutable(entity).scale = { x:0, y:0, z:0 }; 
     }
 
-    /** removes all objects from the game */
+    /** destroys all pooled objects */
     export function DestroyAll() {
-        for (let i = 0; i < collectibleObjects.length; i++) {
-            Destroy(collectibleObjects[i]);
+        if(isDebugging) console.log(debugTag+"destroying all objects...");
+        while(pooledObjects.length > 0) {
+            const entity = pooledObjects.pop();
+            if(entity) Destroy(entity);
         }
+        if(isDebugging) console.log(debugTag+"destroyed all objects!");
     }
-    /** removes given object from game scene and engine */
+
+    /** destroys given object, completely removing it from pooling & the game scene */
     export function Destroy(entity:Entity) {
-        Destroy(entity);
+        engine.removeEntity(entity);
     }
 }
